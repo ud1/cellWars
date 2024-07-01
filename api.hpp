@@ -55,12 +55,22 @@ struct ParticleParameters {
     double essenceLossPerImpulse = 50.0;
 };
 
+template <typename T>
+struct ParticleTypeMap {
+    std::array<T, (size_t) ParticleType::COUNT> values = {};
+
+    T& operator[](ParticleType tp)
+    {
+        return values[(size_t) tp];
+    }
+};
+
 struct GameParameters {
     double maxActionDistance2 = sqr(3.5);
     double tick = 0.016;
     double essenceDeclinePerSecond = 1.0;
     double explosionImpulseReturn = 0.1;
-    std::unordered_map<ParticleType, ParticleParameters> particleParameters;
+    ParticleTypeMap<ParticleParameters> particleParameters;
 
     GameParameters()
     {
@@ -101,7 +111,7 @@ struct GameParameters {
         }
 
         {
-            ParticleParameters &p = particleParameters[ParticleType::DEVOUR];
+//            ParticleParameters &p = particleParameters[ParticleType::DEVOUR];
         }
     }
 };

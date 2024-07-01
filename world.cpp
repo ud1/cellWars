@@ -526,6 +526,21 @@ void applyExplosions(World &w, double t, std::unordered_map<uint16_t, Actions> &
         }
     }
 
+    {
+        uint16_t id = 0;
+        for (auto &p: w.particles)
+        {
+            if (p.particleType == ParticleType::EXPLOSIVE && p.detonated)
+            {
+                ParticleParameters &thisParams = gameParameters.particleParameters[p.particleType];
+                double r = thisParams.explosionRadiusPerEssence * p.essence;
+                double impulsePerRadian = thisParams.explosionImpulsePerEssencePerRadian * p.essence;
+                explodingParticles.insert(std::make_pair(id, Explosion{ExplosionCircle{r}, impulsePerRadian}));
+            }
+            ++id;
+        }
+    }
+
     if (!explodingParticles.empty())
     {
         uint16_t id = 0;
@@ -565,6 +580,7 @@ void applyExplosions(World &w, double t, std::unordered_map<uint16_t, Actions> &
             thisP.essence = 0.0;
             thisP.owner = 0;
             thisP.particleType = ParticleType::NEUTRAL;
+            thisP.detonated = false;
         }
     }
 }
@@ -671,14 +687,22 @@ void simulate(Grid &grid, World &w, double t, std::unordered_map<uint16_t, Actio
             ParticleParameters &params = gameParameters.particleParameters[p.particleType];
             if (p._totalImpulseChange2 > sqr(params.essenceLossMinImpulse))
             {
-                double deltaImpulse = sqrt(p._totalImpulseChange2) - params.essenceLossMinImpulse;
-                p.essence -= deltaImpulse * params.essenceLossPerImpulse;
+                if (p.particleType != ParticleType::EXPLOSIVE)
+                {
+                    double deltaImpulse = sqrt(p._totalImpulseChange2) - params.essenceLossMinImpulse;
+                    p.essence -= deltaImpulse * params.essenceLossPerImpulse;
+                }
+                else
+                {
+                    p.detonated = true;
+                }
             }
 
-            p.essence -= gameParameters.essenceDeclinePerSecond * t;
+            if (p.particleType != ParticleType::SOUL)
+                p.essence -= gameParameters.essenceDeclinePerSecond * t;
+
             if (p.particleType == ParticleType::SOUL || p.particleType == ParticleType::REGENERATOR)
             {
-                ParticleParameters &params = gameParameters.particleParameters[p.particleType];
                 double regen = 1.0 + params.essenceRegenerationSpeedPerSecond * t;
                 p.essence *= regen;
 
@@ -691,6 +715,7 @@ void simulate(Grid &grid, World &w, double t, std::unordered_map<uint16_t, Actio
                 p.essence = 0.0;
                 p.owner = 0;
                 p.particleType = ParticleType::NEUTRAL;
+                p.detonated = false;
             }
         }
     }

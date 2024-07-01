@@ -62,7 +62,7 @@ MyStrategy::MyStrategy(uint16_t playerId) : IStrategy(playerId)
 void MyStrategy::generateActions(const World &w, Actions &actions)
 {
     int soulId = -1;
-    for (int id = 0; id < w.particles.size(); ++id)
+    for (int id = 0; id < (int) w.particles.size(); ++id)
     {
         auto &p = w.particles[id];
         if (p.owner == playerId && p.particleType == ParticleType::SOUL)
@@ -79,8 +79,7 @@ void MyStrategy::generateActions(const World &w, Actions &actions)
     {
         auto &soul = w.particles[soulId];
 
-        int id = 0;
-        for (int id = 0; id < w.particles.size(); ++id)
+        for (int id = 0; id < (int) w.particles.size(); ++id)
         {
             auto &p = w.particles[id];
             if (p.owner == playerId && p.essence > 500)

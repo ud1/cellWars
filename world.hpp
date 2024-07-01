@@ -6,16 +6,6 @@
 #include "myutils.hpp"
 #include "api.hpp"
 
-template <typename T>
-struct ParticleTypeMap {
-    std::array<T, (size_t) ParticleType::COUNT> values = {};
-
-    T& operator[](ParticleType tp)
-    {
-        return values[(size_t) tp];
-    }
-};
-
 struct Particle {
     P pos, vel, _accel;
     uint32_t _updateId;
@@ -24,6 +14,7 @@ struct Particle {
     double essence = 0.0;
     double _currentT;
     double _totalImpulseChange2;
+    bool detonated = false;
 };
 
 struct World {
