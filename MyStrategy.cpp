@@ -1,9 +1,9 @@
 #include "MyStrategy.hpp"
-
+#include <memory>
 
 const double MAX_ACCEL = 500.0;
 
-double calcForce(Particle &p, Particle &oth, double targetDistance, double t, double w)
+double calcForce(const Particle &p, const Particle &oth, double targetDistance, double t, double w)
 {
     P dir = relWrapP(oth.pos - p.pos, w);
     double dist2 = dir.len2();
@@ -59,62 +59,159 @@ IStrategy::IStrategy(uint16_t playerId) : playerId(playerId)
 MyStrategy::MyStrategy(uint16_t playerId) : IStrategy(playerId)
 {}
 
+struct GridSquare {
+    std::vector<uint16_t> ids;
+};
+
+struct ProximityGrid {
+    std::vector<GridSquare> squares;
+    int size;
+
+    ProximityGrid(int wid)
+    {
+        size = (wid + 4) / 3.5;
+        squares.resize(size * size);
+    }
+
+    void add(const Particle &p, uint16_t id)
+    {
+        IP ip = IP(p.pos / P(3.5, 3.5));
+        GridSquare &s = squares[ip.y * size + ip.x];
+        s.ids.push_back(id);
+    }
+
+    GridSquare& get(IP p)
+    {
+        p.x = (p.x + size) % size;
+        p.y = (p.y + size) % size;
+        return squares[p.y * size + p.x];
+    }
+};
+
+struct IndexOrder {
+    std::vector<IP> inds;
+
+    IndexOrder(int w)
+    {
+        int w05 = w/2;
+        for (int y = -w05; y <= w05; ++y)
+        {
+            for (int x = -w05; x <= w05; ++x)
+            {
+                inds.push_back(IP(x, y));
+            }
+        }
+
+        std::sort(inds.begin(), inds.end(), [](auto &a, auto &b){
+            return a.toP().len2() < b.toP().len2();
+        });
+    }
+};
+
+static std::unique_ptr<IndexOrder> indexOrder;
+
 void MyStrategy::generateActions(const World &w, Actions &actions)
 {
-    int soulId = -1;
+    std::unordered_map<ParticleType, std::vector<uint16_t>> myParticles;
+
+    ProximityGrid grid = ProximityGrid(w.width);
+    if (!indexOrder)
+        indexOrder = std::make_unique<IndexOrder>(grid.size);
+
     for (int id = 0; id < (int) w.particles.size(); ++id)
     {
         auto &p = w.particles[id];
-        if (p.owner == playerId && p.particleType == ParticleType::SOUL)
+        grid.add(p, id);
+
+        if (p.owner == playerId)
         {
-            soulId = id;
-            break;
+            myParticles[p.particleType].push_back(id);
         }
     }
 
-    double dist2 = 1e9;
     int closest = -1;
-
-    if (soulId >= 0)
+    if (!myParticles[ParticleType::SOUL].empty())
     {
+        uint16_t soulId = myParticles[ParticleType::SOUL][0];
         auto &soul = w.particles[soulId];
 
-        for (int id = 0; id < (int) w.particles.size(); ++id)
+        IP soulIp = IP(soul.pos / P(3.5, 3.5));
+        for (auto &ip : indexOrder->inds)
         {
-            auto &p = w.particles[id];
-            if (p.owner == playerId && p.essence > 500)
-                continue;
+            GridSquare &sq = grid.get(ip + soulIp);
 
-            if ((p.owner == 0 || p.owner == playerId) && id != soulId)
+            for (auto id : sq.ids)
             {
-                P dir = relWrapP(p.pos - soul.pos, w.width);
-                double d2 = dir.len2();
-                if (dist2 > d2)
+                auto &p = w.particles[id];
+                if (p.owner == playerId && p.essence > 500)
+                    continue;
+
+                if ((p.owner == 0 || p.owner == playerId) && id != soulId)
                 {
-                   dist2 = d2;
-                   closest = id;
+                    closest = id;
+                    break;
                 }
             }
+
+            if (closest >= 0)
+                break;
         }
     }
 
     if (closest >= 0)
     {
+        uint16_t soulId = myParticles[ParticleType::SOUL][0];
+
         auto &soul = w.particles[soulId];
         auto &target = w.particles[closest];
 
         P dir = relWrapP(target.pos - soul.pos, w.width);
         double dist = dir.len();
         P normDir = dir.norm();
-        P targetVel = dist > 10 ? normDir : normDir * 0.1;
+        P targetVel = (dist > 10 ? normDir : normDir * 0.2) + target.vel;
 
-        actions.thrust[soulId].acceleration = targetVel * 20.0;
-        actions.transferEssence[soulId][closest].targetType = ParticleType::REGENERATOR;
+        actions.thrust[soulId].acceleration = targetVel - soul.vel;
 
         if (dist > 1.0)
             actions.applyForce[soulId][closest].force = -1.0;
 
         if (soul.essence > 800)
+        {
             actions.transferEssence[soulId][closest].amount = 10.0;
+            actions.transferEssence[soulId][closest].targetType = ParticleType::REGENERATOR;
+        }
+    }
+
+    for (auto &pr : myParticles)
+    {
+        if (pr.first == ParticleType::SOUL)
+            continue;
+
+        for (uint16_t id : pr.second)
+        {
+            auto &p = w.particles[id];
+            IP ip = IP(p.pos / P(3.5, 3.5));
+
+            GridSquare &sq = grid.get(ip);
+
+            for (auto othId : sq.ids)
+            {
+                if (id != othId)
+                {
+                    auto &oth = w.particles[othId];
+                    double dist2 = oth.pos.dist2(p.pos);
+                    if (dist2 < sqr(3.5))
+                    {
+                        actions.applyForce[id][othId].force = calcForce(p, oth, 1.5, 0.016, w.width);
+
+                        if ((p.essence > 600 || p.essence > 300 && (p.essence + oth.essence) > 600) && (oth.owner != playerId || oth.essence < 800))
+                        {
+                            actions.transferEssence[id][othId].amount = 10.0;
+                            actions.transferEssence[id][othId].targetType = ParticleType::REGENERATOR;
+                        }
+                    }
+                }
+            }
+        }
     }
 }

@@ -376,6 +376,7 @@ void applyEssenceTransfer(World &w, double t, std::unordered_map<uint16_t, Actio
                     {
                         et.second -= minV;
                     }
+                    p.essence = 0;
                 }
             }
         }

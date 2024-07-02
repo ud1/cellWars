@@ -439,7 +439,8 @@ int main()
     Grid g{w.width};
 
     MyStrategy strategy1{1};
-    EmptyStrategy strategy2{2};
+//    EmptyStrategy strategy2{2};
+    MyStrategy strategy2{2};
 
     Shader simpleShader = {"simple"};
     initSimpleShader(simpleShader);
